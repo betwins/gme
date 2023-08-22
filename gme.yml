@@ -1,0 +1,9 @@
+go:
+  application:
+    name: hidef-ips
+    group: DEFAULT_GROUP
+    port: 8671
+  config:
+    host: 59.56.77.128
+    port: 58848
+    env: test
