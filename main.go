@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
@@ -12,9 +14,13 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"log"
 	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 )
 
 func parseArgs() string {
@@ -68,8 +74,10 @@ func main() {
 	if err := k.Load(file.Provider(configFile), yaml.Parser()); err != nil {
 		panic("fail to load config file: " + configFile)
 	}
-	/*	configServerHost := k.String("go.config.host")
-		configServerPort := k.Int64("go.config.port")*/
+	configServerHost := k.String("go.config.host")
+	configServerPort := k.Int64("go.config.port")
+	userName := k.String("go.config.username")
+	password := k.String("go.config.password")
 
 	appGroup := k.String("go.application.group")
 	appName := k.String("go.application.name")
@@ -77,18 +85,20 @@ func main() {
 	env := k.String("go.config.env")
 	dataId := appName + "-" + env
 
-	/*	sc := []constant.ServerConfig{
-		*constant.NewServerConfig(configServerHost, uint64(configServerPort), constant.WithContextPath("/nacos"), constant.WithScheme("http")),
-	}*/
-
 	sc := []constant.ServerConfig{
-		*constant.NewServerConfig("59.56.77.128", 58848, constant.WithContextPath("/nacos"), constant.WithScheme("http")),
+		*constant.NewServerConfig(configServerHost, uint64(configServerPort), constant.WithContextPath("/nacos")),
 	}
+
+	//sc := []constant.ServerConfig{
+	//	*constant.NewServerConfig("59.56.77.17", 58848, constant.WithContextPath("/nacos")),
+	//}
 
 	//create ClientConfig
 	cc := constant.ClientConfig{
 		TimeoutMs:           5000,
 		NotLoadCacheAtStart: true,
+		Username:            userName,
+		Password:            password,
 		LogDir:              "/tmp/nacos/log",
 		CacheDir:            "/tmp/nacos/cache",
 		LogLevel:            "debug",
@@ -103,16 +113,18 @@ func main() {
 	)
 
 	if err != nil {
-		panic(err.Error())
+		log.Fatalln("连接配置中心失败 err: {}", err.Error())
+		return
 	}
 
 	content, err := configClient.GetConfig(vo.ConfigParam{
-		DataId: "gme-test",
-		Group:  "DEFAULT_GROUP",
+		DataId: dataId,
+		Group:  appGroup,
 	})
 
 	if err != nil {
-		panic(err.Error())
+		log.Fatalln("读取配置中心配置失败, err: ", err.Error())
+		return
 	}
 
 	if err := k.Load(rawbytes.Provider([]byte(content)), yaml.Parser()); err != nil {
@@ -138,7 +150,7 @@ func main() {
 	}
 
 	instanceIP := k.String("go.instance.ip")
-	if instanceIP != "" {
+	if instanceIP == "" {
 		ipList, err := localIPv4s(k.Bool("go.application.lan"), k.String("go.application.lannet"))
 		if err != nil {
 			panic("获取本地IP失败")
@@ -173,6 +185,28 @@ func main() {
 		Clusters:    []string{"DEFAULT"}, // 默认值DEFAULT
 	})
 
-	fmt.Println("ip: %s, port: %d", instance.Ip, instance.Port)
+	fmt.Println("ip: ", instance.Ip, " port: ", instance.Port)
+
+	router := gin.Default()
+
+	listenAddr := fmt.Sprintf("%s:%d", instanceIP, appPort)
+	server := &http.Server{
+		Addr:    listenAddr,
+		Handler: router,
+	}
+
+	// 等待中断信号以优雅地关闭服务器（设置 5 秒的超时时间）
+	signalChan := make(chan os.Signal)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
+	sig := <-signalChan
+	log.Println("Get Signal:" + sig.String())
+	log.Println("Shutdown Server")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Println("Server Shutdown err:" + err.Error())
+	}
+	log.Println("Server exit")
 
 }

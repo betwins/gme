@@ -1,9 +1,11 @@
 go:
   application:
-    name: hidef-ips
-    group: DEFAULT_GROUP
+    name: gme
+    group: gme
     port: 8671
   config:
-    host: 59.56.77.128
+    host: 127.0.0.1
     port: 58848
+    username: nacos
+    password: nacos
     env: test
