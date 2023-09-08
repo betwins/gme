@@ -88,4 +88,11 @@ func (c *configMgr) LoadConfig(configFile string) {
 
 func onConfigChange(namespace, group, dataId, data string) {
 	fmt.Println("config changed group:" + group + ", dataId:" + dataId + ", content:" + data)
+	newKo := koanf.New(".")
+	if err := newKo.Load(rawbytes.Provider([]byte(data)), yaml.Parser()); err != nil {
+		log.Fatalln("fail to load config data: " + data)
+	}
+	//oldKo := Mgr.ko
+	Mgr.ko = newKo
+
 }

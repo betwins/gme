@@ -2,8 +2,14 @@ package main
 
 import (
 	"flag"
+	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"gme/gconfig"
 	"gme/gdiscovery"
+	"gme/gmysql"
+	"gme/router"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -61,6 +67,13 @@ func main() {
 	gconfig.Mgr.LoadConfig(configFile)
 
 	gdiscovery.RegisterInstance(&gconfig.Mgr)
+
+	gmysql.Init(&gconfig.Mgr)
+
+	gin.DefaultWriter = io.Discard
+	engine := gin.Default()
+	engine.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	router.SetupRouter(engine)
 
 	//instance, err := namingClient.SelectOneHealthyInstance(vo.SelectOneHealthInstanceParam{
 	//	ServiceName: appName,
